@@ -38,15 +38,168 @@
 #include "llvm/Support/Debug.h"
 #include "llvm/Support/ErrorHandling.h"
 #include "llvm/Support/TargetRegistry.h"
+
+// uCFI
+#include "llvm/CodeGen/MachineInstrBuilder.h"
+
 using namespace llvm;
 
 //===----------------------------------------------------------------------===//
 // Primitive Helper Functions.
 //===----------------------------------------------------------------------===//
 
+// uCFI
+#define GLOBAL_CONSTRUCTOR "_GLOBAL__sub_I_"
+#define GLOBAL_VAR "__cxx_global"
+
+// uCFI
+static cl::opt<bool> redirectRet("redirectRet", cl::init(false),
+		cl::desc("redirect all return instructions to a special place"), cl::Hidden);
+static cl::opt<bool> shadowStack("shadowStack", cl::init(false),
+		cl::desc("implement the fast shadow stack proposed by Dang et. al."), cl::Hidden);
+
+// uCFI
+bool redirectReturn(MachineFunction &MF)
+{
+	bool ret = false;
+	Function * F = const_cast<Function *>(MF.getFunction());
+
+	static Module * M = F->getParent();
+	static LLVMContext & context = M->getContext();
+	static FunctionType * aRetFuncType = FunctionType::get(Type::getVoidTy(context), 
+					(Type *) 0);
+	static Constant * aRetFunc = M->getOrInsertFunction("aRet", aRetFuncType);
+	static GlobalValue * aRetFuncGV = cast<GlobalValue>(aRetFunc);
+
+	if (!F || !F->hasFnAttribute("sensitive-func")) 
+		return false;
+
+	auto funcName = F->getName();
+	if (funcName.startswith(GLOBAL_CONSTRUCTOR) || funcName.startswith(GLOBAL_VAR))
+		return false;
+
+	const TargetInstrInfo * TII = MF.getSubtarget().getInstrInfo();
+	for (MachineFunction::iterator mbb = MF.begin(), mbbEnd = MF.end();
+			mbb != mbbEnd; mbb++) {
+		MachineBasicBlock * MBB = mbb;
+		if (MBB->instr_begin() == MBB->instr_end())
+			continue;
+		MachineBasicBlock::reverse_instr_iterator rmi = MBB->instr_rbegin();
+		MachineInstr * MI = &(*rmi);
+		int opcode = MI->getOpcode();
+		if (opcode == X86::RETQ ||
+			opcode == X86::RETL ||
+			opcode == X86::RETW) {
+			MachineInstrBuilder MIB = BuildMI(*MBB, MI, MI->getDebugLoc(), 
+					TII->get(X86::TAILJMPd64));
+			MIB.addGlobalAddress(aRetFuncGV, 0, 0);
+			ret = true;
+		}
+	}
+
+	return ret;
+}
+
+bool parallelShadowStack(MachineFunction &MF)
+{
+	const TargetInstrInfo * TII = MF.getSubtarget().getInstrInfo();
+	MachineFunction::iterator mbb0 = MF.begin();
+	MachineFunction::iterator mbb = MF.begin();
+	MachineFunction::iterator mbbEnd = MF.end();
+	MachineBasicBlock * firstMBB = mbb;
+
+	MachineOperand MORSP = MachineOperand::CreateReg(X86::RSP, false);
+	MachineOperand MO1 = MachineOperand::CreateImm(1);
+	MachineOperand MO8 = MachineOperand::CreateImm(8);
+	MachineOperand MONoReg = MachineOperand::CreateReg(0, false);
+	MachineOperand MONeg1G = MachineOperand::CreateImm(-((1UL << 31) - 1));
+
+	for (;mbb != mbbEnd; mbb++) {
+		MachineBasicBlock * MBB = mbb;
+		if (MBB->instr_begin() == MBB->instr_end())
+			continue;
+
+		/* add the epilogue
+		 *
+		 *    add $0x8, %rsp
+		 *    pushq -0x7fffffff(%rsp)
+		 *
+		 * */
+		MachineBasicBlock::reverse_instr_iterator rmi = MBB->instr_rbegin();
+		MachineInstr * MI = &(*rmi);
+		int opcode = MI->getOpcode();
+		if (opcode == X86::RETQ || opcode == X86::RETL || opcode == X86::RETW) 
+		{
+			// add $0x8, %rsp
+			MachineInstrBuilder MIB = BuildMI(*MBB, MI, MI->getDebugLoc(), 
+					TII->get(X86::ADD64ri32), X86::RSP)
+				.addOperand(MORSP)
+				.addOperand(MO8);
+
+			// pushq -0x7fffffff(%rsp)
+			MIB = BuildMI(*MBB, MI, MI->getDebugLoc(), 
+					TII->get(X86::PUSH64rmm))
+				.addOperand(MORSP)
+				.addOperand(MO1)
+				.addOperand(MONoReg)
+				.addOperand(MONeg1G)
+				.addReg(X86::SS);
+
+		}
+	}
+
+	/* add the prologue :
+	 *
+	 *    popq -0x7fffffff(%rsp)
+	 *    sub $0x8, %rsp
+	 *
+	 * */
+
+	MachineBasicBlock::instr_iterator mi = firstMBB->instr_begin();
+	MachineInstr * firstMI = &(*mi);
+	MachineBasicBlock * pFirstMBB = firstMBB;
+
+	// if the first MBB is not single entry, create another one above it
+	if (!firstMBB->pred_empty()) {
+		MachineBasicBlock * newFirstMBB= MF.CreateMachineBasicBlock(
+				firstMBB->getBasicBlock());
+		MF.insert(mbb0, newFirstMBB);
+		newFirstMBB->addSuccessor(firstMBB);
+
+		mi = newFirstMBB->instr_begin();
+		pFirstMBB =newFirstMBB;
+	}
+
+	// popq -0x7fffffff(%rsp)
+	MachineInstrBuilder MIB = BuildMI(*pFirstMBB, mi, firstMI->getDebugLoc(), 
+			TII->get(X86::POP64rmm))
+		.addOperand(MORSP)
+		.addOperand(MO1)
+		.addOperand(MONoReg)
+		.addOperand(MONeg1G)
+		.addReg(X86::SS);
+
+	// sub $0x8, %rsp
+	MIB = BuildMI(*pFirstMBB, mi, firstMI->getDebugLoc(), 
+			TII->get(X86::SUB64ri32), X86::RSP)
+		.addOperand(MORSP)
+		.addOperand(MO8);
+
+	return true;
+
+}
+
 /// runOnMachineFunction - Emit the function body.
 ///
 bool X86AsmPrinter::runOnMachineFunction(MachineFunction &MF) {
+	
+	// uCFI
+	bool ret = false;
+	if (redirectRet)
+		ret |= logReturn(MF);
+	if (shadowStack)
+		ret |= parallelShadowStack(MF);
+
   SMShadowTracker.startFunction(MF);
 
   SetupMachineFunction(MF);
@@ -67,8 +220,8 @@ bool X86AsmPrinter::runOnMachineFunction(MachineFunction &MF) {
   // Emit the rest of the function body.
   EmitFunctionBody();
 
-  // We didn't modify anything.
-  return false;
+	// uCFI
+  return ret;
 }
 
 /// printSymbolOperand - Print a raw symbol reference operand.  This handles
