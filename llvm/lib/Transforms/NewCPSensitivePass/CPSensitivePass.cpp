@@ -3,11 +3,6 @@
 using namespace llvm;
 using namespace std;
 
-// handle external calls: __cxa_atexit, free, vsprintf, fprintf,
-// sprintf, obstack_free, fwrite, memcmp*, read, vfprintf, bsearch,
-// fread, printf, realloc, memchr, strlen, strchr, strtoul, strcmp, strcpy, 
-// strncmp, strrchr, strcat, strtol, strncpy, strpbrk, strstr, strcspn, strspn,
-// strerror
 static const char* IgnoreFuncs[] = {
 	// c functions
 	"__cxa_atexit", 
@@ -32,15 +27,6 @@ static const char* PropagateArgFuncs[] = {
 	"llvm.memcpy",
 	nullptr,
 };
-
-static cl::opt<bool> debloat("debloat", cl::init(false),
-        cl::desc("remove non-sensitive instructions"), cl::Hidden);
-
-static cl::opt<bool> checkDebloat("check-debloat", cl::init(false),
-        cl::desc("check duplicatedf ptwrite for BBID"), cl::Hidden);
-
-static cl::opt<bool> reducePTWrite("reduce-PTWrite", cl::init(false),
-        cl::desc("try to reduce the number of instrumneted PTWrite"), cl::Hidden);
 
 static MDNode *getNextElTBAATag(size_t &STBAAIndex, Type *ElTy, const StructLayout *SL,
 		unsigned idx, MDNode *STBAATag) {
@@ -74,29 +60,6 @@ static MDNode *getNextElTBAATag(size_t &STBAAIndex, Type *ElTy, const StructLayo
 		}
 	}
 	return NULL;
-}
-
-void CPSensitivePass::getPTWriteInstrs(BasicBlock * BB, SmallVector<Value *, 4> & vec){
-  for (BasicBlock::iterator i = BB->begin(), iEnd = BB->end(); i != iEnd;) {
-    Instruction * I = &(*i++);
-
-    if (CallInst * CI = dyn_cast<CallInst>(I)) {
-      Function * func = CI->getCalledFunction();
-      if (func && func->getName() == "ptwrite")
-        vec.push_back(I);
-    }
-  }
-}
-
-void CPSensitivePass::getSensitiveCallInstrs(BasicBlock * BB, SmallVector<Value *, 4> & vec){
-  for (BasicBlock::iterator i = BB->begin(), iEnd = BB->end(); i != iEnd;) {
-    Instruction * I = &(*i++);
-
-    if (CallInst * CI = dyn_cast<CallInst>(I)) {
-      if (CI->getMetadata("is-sensitive") || CI->getMetadata("is-less-sensitive"))
-        vec.push_back(I);
-    }
-  }
 }
 
 MDString* CPSensitivePass::getMDString(MDNode *TBAATag) {
@@ -225,6 +188,13 @@ bool CPSensitivePass::isTypeMatch(ImmutableCallSite CS, Function *F, Type *Retur
 
 // find all possible targets for indirect calls
 void CPSensitivePass::analyzeIndirectCalls(Module &M) {
+	// collect all address-taken functions
+	for (Module::iterator it = M.begin(), ie = M.end(); it != ie; ++it) {
+		Function &f = *it;
+		if (f.hasAddressTaken())
+			AllFunctions.insert(&f);
+	}
+
 	for (Module::iterator it = M.begin(), ie = M.end(); it != ie; ++it) {
 		Function &f = *it;
 		if (f.isDeclaration() || f.isIntrinsic()) {
@@ -361,14 +331,6 @@ bool CPSensitivePass::shouldProtectType(Type *Ty, std::unordered_set<Type*> &Vis
 		} else {
 			// This is not a union, go through all fields
 			MDNode *STBAATag = StructsTBAA.lookup(sTy);
-
-			// cannot find the tbaa tag
-			/*
-			if (STBAATag == NULL) {
-				StructTypesProtectInfo[key] = false;
-				return false;
-			} 
-			*/
 
 			const StructLayout *sl = DL->getStructLayout(sTy);
 			size_t STBAAIndex = 0;
@@ -640,8 +602,7 @@ bool CPSensitivePass::insertPTWrite(Module &M, Value * value, BasicBlock::iterat
 	ConstantInt * Low22BitsMask = ConstantInt::get(Int64Ty, 0x3fffff);
 	
 	MDNode *node = MDNode::get(context, MDString::get(context, "ptwrite"));
-	// instrument the call to 
-	//  void ptwrite()
+	// instrument the call to "void ptwrite()"
 	FunctionType * ptwriteFuncType = FunctionType::get(Type::getVoidTy(context), Int64Ty, (Type *)0);
 	FunctionType * ptwriteChunkFuncType = FunctionType::get(Type::getVoidTy(context), (Type *)0);
 	Constant * ptwriteChunk = M.getOrInsertFunction("ptwrite_chunk", ptwriteChunkFuncType);
@@ -672,8 +633,7 @@ bool CPSensitivePass::insertPTWriteAdd4K(Module &M, Value * value, BasicBlock::i
 	ConstantInt * Constant4K = ConstantInt::get(Int64Ty, 0x1000);
 	
 	MDNode *node = MDNode::get(context, MDString::get(context, "ptwrite"));
-	// instrument the call to 
-	//  void ptwrite()
+	// instrument the call to "void ptwrite()"
 	FunctionType * ptwriteFuncType = FunctionType::get(Type::getVoidTy(context), Int64Ty, (Type *)0);
 	FunctionType * ptwriteChunkFuncType = FunctionType::get(Type::getVoidTy(context), (Type *)0);
 	Constant * ptwriteChunk = M.getOrInsertFunction("ptwrite_chunk", ptwriteChunkFuncType);
@@ -700,7 +660,6 @@ bool CPSensitivePass::insertPTWriteCallToBB(Module &M, BasicBlock * BB)
 {
 	auto iter = allInstrumentedBBs.find(BB);
 	if (iter != allInstrumentedBBs.end())
-		// we have instrumented this BB, avoid doing it again
 		return false;
 
 	allInstrumentedBBs.emplace(BB, BBID);
@@ -759,8 +718,7 @@ void CPSensitivePass::replaceCEOWithInstr(Instruction * I, Value * pointer)
 						Instruction * insertionPtr = nullptr;
 						unsigned incomingValuesNum = PN->getNumIncomingValues();
 						BasicBlock * BB = nullptr;
-						for (unsigned index = 0; index < incomingValuesNum; index++)
-						{
+						for (unsigned index = 0; index < incomingValuesNum; index++) {
 							Value * value = PN->getIncomingValue(index);
 							if (value == pointer)
 							{
@@ -778,9 +736,7 @@ void CPSensitivePass::replaceCEOWithInstr(Instruction * I, Value * pointer)
 								findConstantExpr(newI);
 							}
 						}
-					}
-					else
-					{
+					} else {
 						Instruction * insertionPtr = I->getParent()->getFirstInsertionPt();
 						Instruction * newI = CE->getAsInstruction();
 						newI->insertBefore(insertionPtr);
@@ -1001,51 +957,27 @@ void CPSensitivePass::addSensitiveCallIn(Module &M)
 void CPSensitivePass::doInstrumentation(Module &M)
 {
 	errs() << "Instrumenting sensitive instructions...\n";
-	unsigned long instrumentByPHI = 0;
-	unsigned long instrumentByInstr = 0;
-	//unsigned long instrumentEntryBB = 0;
-	//unsigned long instrumentRetBB = 0;
-
-	static DenseMap<BasicBlock *, unordered_set<Value *> *> instrumentedIndex;
 
 	for (auto value : AllSensitiveValues) {
 		Instruction * I = dyn_cast<Instruction>(value);
+
 		if (!I || I->getParent()->getParent()->hasAvailableExternallyLinkage())
 			continue;
 
-		if (isa<UnreachableInst>(I) || isa<BranchInst>(I) ||
-				isa<SwitchInst>(I) || isa<ResumeInst>(I) ||
+		if (isa<UnreachableInst>(I) || 
+				isa<BranchInst>(I) ||
+				isa<SwitchInst>(I) || 
+				isa<ResumeInst>(I) ||
 				isa<BitCastInst>(I))
-			// uninteresting basic blocks -- no instrumentation
 			continue;
-
-		//errs() << *I << "\n";
 
 		if (GetElementPtrInst * GEPI = dyn_cast<GetElementPtrInst>(I)) {
 			BasicBlock::iterator insertPoint(I);
 			unsigned idx_num = GEPI->getNumIndices();
 			for (unsigned idx = 0; idx < idx_num; idx++) {
 				Value * Index = GEPI->getOperand(idx + 1);
-				if (!isa<ConstantInt>(Index) && !isa<ConstantDataVector>(Index)) {
-#if 0
-					BasicBlock * BB = GEPI->getParent();
-					auto BBiter = instrumentedIndex.find(BB);
-					if (BBiter != instrumentedIndex.end()) {
-						auto ValueIter = BBiter->second->find(Index);
-						if (ValueIter != BBiter->second->end())
-							errs() << *Index << "\n";
-							continue;
-					}
-#endif
+				if (!isa<ConstantInt>(Index) && !isa<ConstantDataVector>(Index))
 					insertPTWriteAdd4K(M, Index, insertPoint);
-#if 0
-					if (BBiter == instrumentedIndex.end()) {
-						instrumentedIndex[BB] = new unordered_set<Value *>;
-						instrumentedIndex[BB]->insert(Index);
-					} else
-						instrumentedIndex[BB]->insert(Index);
-#endif
-				}
 			}
 		} else if (SelectInst * SI = dyn_cast<SelectInst>(I)) {
 			BasicBlock::iterator insertPoint(I);
@@ -1058,86 +990,22 @@ void CPSensitivePass::doInstrumentation(Module &M)
 		//insert the function call before this basicblock
 		insertPTWriteCallToBB(M, I->getParent());
 	}
-	errs() << "finish\n";
-
-	instrumentByInstr = allInstrumentedBBs.size();
 
 	// for each instrumented PHINode, instrument all its incoming BBs
-	for (auto & PN : allInstrumentedPHINodes)
-	{
+	for (auto & PN : allInstrumentedPHINodes) {
 		unsigned incomingNum = PN->getNumIncomingValues();
-		for (unsigned index = 0; index < incomingNum; index++)
-		{
+		for (unsigned index = 0; index < incomingNum; index++) {
 			BasicBlock * incomingBB = PN->getIncomingBlock(index);
-			if (allInstrumentedBBs.find(incomingBB) == allInstrumentedBBs.end())
-			{
+			if (allInstrumentedBBs.find(incomingBB) == allInstrumentedBBs.end()) {
 				instrumentByPHI++;
 				insertPTWriteCallToBB(M, incomingBB);
 			}
 		}
 	}
 
-	errs() << "END: Applying CPI for " << M.getModuleIdentifier() << '\n';
+	errs() << "END: Applying uCFI for " << M.getModuleIdentifier() << '\n';
 
-	uint64_t totalBBNum = 0;
-
-	for (auto &F : M) {
-		if (F.isDeclaration() || F.isIntrinsic())
-			continue;
-		for (auto &BB : F) {
-			totalBBNum++;
-		}
-	}
-
-#if 0
-	// do instrumentation for the entry BB and last BB
-	for (auto &F : M) {
-		if (F.isDeclaration() || F.isIntrinsic())
-			continue;
-		// instrument entry BB
-		BasicBlock * EntryBB = const_cast<BasicBlock *>(&F.getEntryBlock());
-		if (allInstrumentedBBs.find(EntryBB) == allInstrumentedBBs.end()) {
-			instrumentEntryBB++;
-			insertPTWriteCallToBB(M, EntryBB);
-		}
-		BasicBlock * lastBB = nullptr;
-		// try to find ret BB
-		for (auto &BB : F) {
-			totalBBNum++;
-			if (BB.begin() == BB.end())
-				continue;
-			Instruction * lastI = &(*BB.rbegin());
-			if (isa<ReturnInst>(lastI)) {
-				lastBB = &BB;
-				if (allInstrumentedBBs.find(lastBB) == allInstrumentedBBs.end()) {
-					instrumentRetBB++;
-					insertPTWriteCallToBB(M, lastBB);
-				}
-			} else if (isa<UnreachableInst>(lastI)) {
-				lastBB = &BB;
-				if (allInstrumentedBBs.find(lastBB) == allInstrumentedBBs.end()) {
-					instrumentRetBB++;
-					insertPTWriteCallToBB(M, lastBB);
-				}
-			}
-		}
-		if (!lastBB) llvm_unreachable("no last BB?");
-	}
-#endif
-
-	errs() << "Saving module ...\n";
-	saveModule(M, M.getName());
-	errs() << "Saved.\n";
-
-	uint64_t instrumentedBBNum = allInstrumentedBBs.size();
-	errs() << instrumentedBBNum << "/" << totalBBNum << " BB instrumented\n";
-	errs() << "\t" << instrumentByInstr << " by sensitive instructions\n";
-	errs() << "\t" << instrumentByPHI << " by PHI node\n";
-	//errs() << "\t" << instrumentEntryBB << " as func Entry\n";
-	//errs() << "\t" << instrumentRetBB << " as func Ret\n";
-
-  if (reducePTWrite)
-    deduplicatePTWrite(M);
+	//saveModule(M, M.getName());
 }
 
 unsigned long CPSensitivePass::getIDFromPTWriteInstr(Instruction * I) {
@@ -1161,107 +1029,6 @@ unsigned long CPSensitivePass::getIDFromPTWriteInstr(Instruction * I) {
 
 unsigned long CPSensitivePass::getIDFromBB(BasicBlock * BB) {
   return getIDFromPTWriteInstr(BB->getFirstNonPHI());
-}
-
-// this funciton is going to remove unecessary PTWrite calls, for example
-//
-//         O ---- F 
-//       /   \
-//      T    .
-//       \ ../
-//
-// Here is a common loop: O is the loop condition, T is the true brach, F is the false branch
-//
-// Let's say both O, T, and F are instrumented with PTWrite.
-//
-// In this case, instrumentation to O is not necessary as T/F indicates O.
-//
-// But we need to be careful to check
-//
-//    (1) O will not generate other PT packet before T/F, like (no 2nd PTWrite and no sensitive call instr)
-//    (2) both T and F only have one predecessor
-//
-void CPSensitivePass::deduplicatePTWrite(Module &M) {
-  std::unordered_set<Instruction *> toBeRemoved;
-  std::unordered_set<BasicBlock *> toBeInstrumented;
-
-	for (Module::iterator f = M.begin(), fEnd = M.end(); f != fEnd; f++) {
-		Function * F = &(*f);
-		if (F->isDeclaration() || F->isIntrinsic())
-			continue;
-
-		for (Function::iterator bb = F->begin(), bbEnd = F->end(); bb != bbEnd;) {
-			BasicBlock * BB = &(*bb++);
-
-      SmallVector<Value *, 4> PTWvec, SCallvec;
-      getPTWriteInstrs(BB, PTWvec);
-      getSensitiveCallInstrs(BB, SCallvec);
-      if (PTWvec.size() != 1) continue; // should only have 1 PTWrite
-      if (SCallvec.size() != 0) continue; // should not have sensitive calls
-
-      succ_iterator SI = succ_begin(BB), E = succ_end(BB);
-      if (SI == E) continue; // no successor
-      BasicBlock *firstSucc = *SI;
-      ++SI;
-      if (SI == E) continue; // 1 successor
-      BasicBlock *secondSucc = *SI;
-      ++SI;
-      if (SI != E) continue; // > 2 successors
-
-      if (firstSucc->getSinglePredecessor() && secondSucc->getSinglePredecessor()) {
-        SmallVector<Value *, 4> fPTWvec, sPTWvec;
-        getPTWriteInstrs(firstSucc, fPTWvec);
-        getPTWriteInstrs(secondSucc, sPTWvec);
-
-        Instruction * PTWInstr = dyn_cast<Instruction>(PTWvec[0]);
-
-        if (fPTWvec.size() && sPTWvec.size()) {
-          toBeRemoved.insert(PTWInstr);
-          errs() << getIDFromBB(firstSucc) << " ==> " << getIDFromBB(BB) << "\n";
-          errs() << getIDFromBB(secondSucc) << " ==> " << getIDFromBB(BB) << "\n\n";
-        } else if (fPTWvec.size()) {
-          toBeRemoved.insert(PTWInstr);
-          toBeInstrumented.insert(secondSucc);
-          errs() << getIDFromBB(firstSucc) << " ==> " << getIDFromBB(BB) << "\n\n";
-        } else if (sPTWvec.size()) {
-          toBeRemoved.insert(PTWInstr);
-          toBeInstrumented.insert(firstSucc);
-          errs() << getIDFromBB(secondSucc) << " ==> " << getIDFromBB(BB) << "\n\n";
-        }
-        // do not do anything if none successor has successor
-      }
-
-
-			//for (BasicBlock::iterator i = BB->begin(), iEnd = BB->end(); i != iEnd;) {
-      //}
-    }
-  }
-
-  for (auto instr : toBeRemoved) {
-    instr->eraseFromParent();
-  }
-  for (auto bb : toBeInstrumented) {
-    insertPTWriteCallToBB(M, bb);
-  }
-
-  // now, let's remove the PTWrite in the entry block
-  uint64_t reducedNum = 0;
-	for (Module::iterator f = M.begin(), fEnd = M.end(); f != fEnd; f++) {
-		Function * F = &(*f);
-		if (F->isDeclaration() || F->isIntrinsic())
-			continue;
-
-    BasicBlock * entryBB = &F->getEntryBlock();
-
-    SmallVector<Value *, 4> PTWvec;
-    getPTWriteInstrs(entryBB, PTWvec);
-    if (PTWvec.size() != 0) {
-      Instruction * PTWInstr = dyn_cast<Instruction>(PTWvec[0]);
-      PTWInstr->eraseFromParent();
-      reducedNum++;
-    }
-  }
-  errs() << reducedNum << " PTWrite is removed from function entry\n";
 }
 
 // this function is to shift all indirect function call into 
@@ -1519,339 +1286,7 @@ void CPSensitivePass::doShiftIndirectCall(Module &M)
 		}
 	}
 
-	saveModule(M, "hh");
-}
-
-// this function is used to split a BB after a sensitive call if
-//
-// the function may have side effect on the control data
-// and it is not the last sensitive instruction in current BB
-//
-void CPSensitivePass::splitBBAfterCall(Module &M) {
-
-	for (Module::iterator f = M.begin(), fEnd = M.end(); f != fEnd; f++) {
-		Function * F = &(*f);
-		if (F->isDeclaration() || F->isIntrinsic())
-			continue;
-		for (Function::iterator bb = F->begin(), bbEnd = F->end(); bb != bbEnd;) {
-			BasicBlock * BB = &(*bb++);
-			for (BasicBlock::iterator i = BB->begin(), iEnd = BB->end(); i != iEnd;) {
-				Instruction * I = &(*i++);
-				if (!isa<CallInst>(I) && !isa<InvokeInst>(I))
-					continue;
-				if (!I->getMetadata("is-sensitive"))
-					continue;
-
-				bool splitBB = false;
-
-				ImmutableCallSite cs(I);
-				Function * calledFunc = const_cast<Function *>(cs.getCalledFunction());
-				if (calledFunc && 
-				   (calledFunc->isDeclaration() || calledFunc->isIntrinsic()))
-					splitBB = false;
-				else if (!calledFunc)
-					splitBB = true;
-				else if (SensitiveFuncs.find(calledFunc) != SensitiveFuncs.end())
-					splitBB = true;
-				else
-					splitBB = false;
-
-				/*
-				for (auto user : I->users()) {
-					if (Instruction * userI = dyn_cast<Instruction>(user))
-						if (userI->getParent() == BB) {
-							splitBB = true;
-							break;
-						}
-				}*/
-
-				if (!splitBB) continue;
-
-				splitBB = false;
-				BasicBlock::iterator fi = i;
-				for (; fi != iEnd; fi++) {
-					Instruction * FI = &(*fi);
-					if (FI->getMetadata("is-sensitive")) {
-						splitBB = true;
-						break;
-					}
-				}
-
-				if (!splitBB) continue;
-
-				// ok, let's split the BB
-				BasicBlock * AfterCallBB = BB->splitBasicBlock(i, "afterCall");
-
-				i = AfterCallBB->begin();
-				iEnd = AfterCallBB->end();
-				BB = AfterCallBB;
-			}
-		}
-	}
-
-}
-
-void CPSensitivePass::doCheckDebloat(Module &M) {
-  // M.getContext()
-  uint32_t reduced_number = 0;
-
-	for (Module::iterator f = M.begin(), fEnd = M.end(); f != fEnd; f++) {
-		Function * F = &(*f);
-		if (F->isDeclaration() || F->isIntrinsic())
-			continue;
-
-		for (Function::iterator bb = F->begin(), bbEnd = F->end(); bb != bbEnd;) {
-			BasicBlock * BB = &(*bb++);
-      uint32_t bbid_number = 0;
-      Instruction * firstBBID = nullptr;
-			for (BasicBlock::iterator i = BB->begin(), iEnd = BB->end(); i != iEnd;) {
-				Instruction * I = &(*i++);
-        if (I->getMetadata("ptwrite-bbid")) {
-            if (bbid_number != 0) {
-              if (bbid_number == 1)
-                errs() << "\n" << *firstBBID << "\n";
-              errs() << *I << "\n";
-              reduced_number++;
-            }
-            if (bbid_number == 0) firstBBID = I;
-            bbid_number++;
-        }
-      }
-    }
-  }
-
-  errs() << "reduce " << reduced_number << " ptwrite\n";
-}
-
-void CPSensitivePass::doDebloat(Module &M) {
-  // M.getContext()
-	for (Module::iterator f = M.begin(), fEnd = M.end(); f != fEnd; f++) {
-		Function * F = &(*f);
-		if (F->isDeclaration() || F->isIntrinsic())
-			continue;
-
-
-		for (Function::iterator bb = F->begin(), bbEnd = F->end(); bb != bbEnd;) {
-			BasicBlock * BB = &(*bb++);
-			for (BasicBlock::iterator i = BB->begin(), iEnd = BB->end(); i != iEnd;) {
-				Instruction * I = &(*i++);
-				if (!I->getMetadata("is-sensitive") && !I->getMetadata("is-less-sensitive") && !isa<TerminatorInst>(I) && !I->getName().startswith("hong")) {
-            Value * undef = UndefValue::get(I->getType());
-            if (CallInst * CI = dyn_cast<CallInst>(I)) {
-                Function * f = CI->getCalledFunction();
-                if (f && f->getName() == "ptwrite")
-                    continue;
-            } else if (LandingPadInst * LPI = dyn_cast<LandingPadInst>(I)) {
-                continue;
-            }
-            I->replaceAllUsesWith(undef);
-            I->eraseFromParent();
-        } else if (BranchInst * BI = dyn_cast<BranchInst>(I)) {
-            if (BI->isConditional()) {
-
-	            GlobalVariable * gCond = new GlobalVariable(M, IntegerType::get(M.getContext(), 1),
-                false, GlobalValue::ExternalLinkage, nullptr, "gCond");
-		          Builder->SetInsertPoint(F->getEntryBlock().getFirstInsertionPt());
-	            Value * Cond = Builder->CreateLoad(gCond, "hong");
-
-              BI->setCondition(Cond);
-            }
-        }
-      }
-    }
-  }
-  return;
-}
-
-bool CPSensitivePass::runOnModule(llvm::Module &M) {
-	DL = &getAnalysis<DataLayoutPass>().getDataLayout();
-	TLI = &getAnalysis<TargetLibraryInfo>();
-	AA = &getAnalysis<AliasAnalysis>();
-	//initialize the IR Builder
-	const DataLayout *DL = M.getDataLayout();
-	BuilderTy TheBuilder(M.getContext(), TargetFolder(DL));
-	Builder = &TheBuilder;
-
-  if (debloat) {
-    doDebloat(M);
-    return false;
-  } else if (checkDebloat) {
-    doCheckDebloat(M);
-    return false;
-  }
-  
-	BBID = 1;	// reserve 0 for un-instrumentation 
-	allInstrumentedPHINodes.clear();
-	allInstrumentedBBs.clear();
-
-	ConstantExpr2Instruction(M);
-
-	// get all tbaa nodes
-	NamedMDNode *STBAA = M.getNamedMetadata("clang.tbaa.structs");
-	if (STBAA == nullptr)
-		llvm_unreachable("TBAA: clang.tbaa.structs is null!!!!!!\n");
-	for (size_t i = 0, e = STBAA->getNumOperands(); i != e; ++i) {
-		MDNode *MD = STBAA->getOperand(i);
-		MDNode *TBAATag = dyn_cast_or_null<MDNode>(MD->getOperand(1));
-		ValueAsMetadata *ValMD = dyn_cast_or_null<ValueAsMetadata>(MD->getOperand(0));
-		if (TBAATag && ValMD) {
-			StructsTBAA[cast<StructType>(ValMD->getType())] = TBAATag;
-		}
-	}
-
-	NamedMDNode *UTBAA = M.getNamedMetadata("clang.tbaa.unions");
-	if (UTBAA == nullptr)
-		llvm_unreachable("TBAA: clang.tbaa.unions is null!!!!!!\n");
-	for (size_t i = 0, e = UTBAA->getNumOperands(); i != e; ++i) {
-		MDNode *MD = UTBAA->getOperand(i);
-		MDNode *TBAATag = dyn_cast_or_null<MDNode>(MD->getOperand(1));
-		ValueAsMetadata *ValMD = dyn_cast_or_null<ValueAsMetadata>(MD->getOperand(0));
-		if (TBAATag && ValMD) {
-			UnionsTBAA[cast<StructType>(ValMD->getType())] = TBAATag;
-		}
-	}
-
-	// collect all functions
-	for (Module::iterator it = M.begin(), ie = M.end(); it != ie; ++it) {
-		Function &f = *it;
-		if (f.hasAddressTaken())
-			AllFunctions.insert(&f);
-	}
-
-	analyzeIndirectCalls(M);
-	collectSensitiveTypes(M);
-	dumpAllProtectedTypes();
-
-	for (Module::iterator it = M.begin(), ie = M.end(); it != ie; ++it) {
-		Function &f = *it;
-		if (f.isDeclaration() || f.isIntrinsic())
-			continue;
-
-		for (inst_iterator ii = inst_begin(f), ie = inst_end(f);
-				ii != ie; ++ii) {
-			Instruction* inst = &(*ii);
-			
-			/*
-			if (CallInst *cInst = dyn_cast<CallInst>(inst)) {
-				if (cInst->getCalledFunction() == NULL) {
-					AllSensitiveValues.insert(cInst->getCalledValue());
-				}
-			}	
-
-			if (InvokeInst *iInst = dyn_cast<InvokeInst>(inst)) {
-				if (iInst->getCalledFunction() == NULL) {
-					AllSensitiveValues.insert(iInst->getCalledValue());
-				}
-			}
-			*/
-			
-			if (valueWithSensitiveType(inst) && inst->getNumUses() != 0)
-				addToSensitive(inst);
-
-			StoreInst *sInst = dyn_cast<StoreInst>(inst);
-
-			for (unsigned i = 0, n = inst->getNumOperands(); i < n; ++i) {
-				Value *operand = inst->getOperand(i);
-				if (valueWithSensitiveType(operand)) {
-					addToSensitive(operand);
-					if (sInst) {
-						addToSensitive(sInst);
-					}
-				}
-			}
-
-			// for store instruction, if the pointer value is bitcasted, we check
-			//
-			//    1) the original type is a pointer type (A) of anoter pointer type (B)
-			//	  2) pointer type (B) is sensitive
-			//
-			// we will add the value to store into sensitive set
-			if (StoreInst *SI = dyn_cast<StoreInst>(inst)) {
-				Value * pointer = SI->getPointerOperand();
-				Value * value   = SI->getValueOperand();
-
-				if (BitCastInst * BCI = dyn_cast<BitCastInst>(pointer)) {
-					if (value->getType()->isPointerTy()) {
-						Type * srcType = BCI->getSrcTy();
-						Type * pointedType = cast<PointerType>(srcType)->getElementType();
-
-						if (pointedType->isPointerTy() && isTypeSensitive(pointedType)) {
-							addToSensitive(value);
-							addToSensitive(pointer);
-						}
-					}
-				}
-			/*
-			// as for store instruction
-			} else if (LoadInst * LI = dyn_cast<LoadInst>(inst)) {
-				Value * pointer = LI->getPointerOperand();
-
-				// mark sensitive
-				LLVMContext &ctx = M.getContext();
-				MDNode *node = MDNode::get(ctx, MDString::get(ctx, "yes"));
-
-				if (!pointToI8(pointer->getType()))
-					continue;
-
-				if (BitCastInst * BCI = dyn_cast<BitCastInst>(pointer)) {
-					Type * srcType = BCI->getSrcTy();
-					if (srcType->isPointerTy()) {
-						Type * pointedType = cast<PointerType>(srcType)->getElementType();
-
-						if (pointedType->isPointerTy() && isTypeSensitive(pointedType)) {
-							AllSensitiveValues.insert(LI);
-							AllSensitiveValues.insert(BCI);
-							LI->setMetadata("load-special", node);
-							BCI->setMetadata("load-special", node);
-				
-						}
-					}
-				}
-			*/
-			} else if (ReturnInst *retInst = dyn_cast<ReturnInst>(inst)) {
-				if (retInst->getNumOperands() > 0) {
-					Func2RetValueMap[&f].push_back(retInst->getOperand(0));
-				}
-			}
-		}
-	}
-	
-	// until no values values are inserted into 'AllSensitiveValues'
-	bool changed = true;
-	while (changed) {
-		changed = false;
-		errs() << "got " << AllSensitiveValues.size() << " sensitive values\n";
-		for (Module::iterator it = M.begin(), ie = M.end(); it != ie; ++it) {
-			Function &f = *it;
-			changed |= doTBAAOnFunction(f);
-		}
-	}
-
-	addSensitiveCallIn(M);
-	revokeSensitivity(M);
-
-	// mark sensitive
-	LLVMContext &ctx = M.getContext();
-	for (Value *sV : AllSensitiveValues) {
-		if (Instruction *inst = dyn_cast<Instruction>(sV)) {
-			MDNode *node = MDNode::get(ctx, MDString::get(ctx, "yes"));
-			inst->setMetadata("is-sensitive", node);
-		}
-	}
-	
-	errs() << "-----------------------------\n";
-	for (auto F : SensitiveFuncs) {
-		errs() << F->getName() << "\n";
-		F->addFnAttr("sensitive-func");
-		F->addFnAttr("disable-tail-calls", "true");
-	}
-	errs() << "======\n";
-
-	//splitBBAfterCall(M);
-	doInstrumentation(M);
-	doShiftIndirectCall(M);
-	
-	return true;
+	//saveModule(M, "hh");
 }
 
 bool CPSensitivePass::hasSensitiveUses(Instruction * I)
@@ -1933,6 +1368,7 @@ void CPSensitivePass::_hasSensitiveInstrs(Function * func, std::unordered_set<Fu
 
 	return;
 }
+
 bool CPSensitivePass::pointToI8(Type * type) {
 	if (type->isPointerTy()) {
 		Type * pointedType = cast<PointerType>(type)->getElementType();
@@ -2034,15 +1470,177 @@ void CPSensitivePass::revokeSensitivity(Module & M)
 		revokeSensitivity(M);
 }
 
+bool CPSensitivePass::runOnModule(llvm::Module &M) {
+
+	// Initialization
+
+	// obtain analysis result
+	DL = &getAnalysis<DataLayoutPass>().getDataLayout();
+	TLI = &getAnalysis<TargetLibraryInfo>();
+	AA = &getAnalysis<AliasAnalysis>();
+	//initialize the IR Builder
+	const DataLayout *DL = M.getDataLayout();
+	BuilderTy TheBuilder(M.getContext(), TargetFolder(DL));
+	Builder = &TheBuilder;
+	// initialize
+	BBID = 1;	// reserve 0 for un-instrumentation 
+	allInstrumentedPHINodes.clear();
+	allInstrumentedBBs.clear();
+
+	ConstantExpr2Instruction(M);
+
+	// get all tbaa nodes
+	NamedMDNode *STBAA = M.getNamedMetadata("clang.tbaa.structs");
+	if (STBAA == nullptr)
+		llvm_unreachable("TBAA: clang.tbaa.structs is null!!!!!!\n");
+	for (size_t i = 0, e = STBAA->getNumOperands(); i != e; ++i) {
+		MDNode *MD = STBAA->getOperand(i);
+		MDNode *TBAATag = dyn_cast_or_null<MDNode>(MD->getOperand(1));
+		ValueAsMetadata *ValMD = dyn_cast_or_null<ValueAsMetadata>(MD->getOperand(0));
+		if (TBAATag && ValMD) {
+			StructsTBAA[cast<StructType>(ValMD->getType())] = TBAATag;
+		}
+	}
+
+	NamedMDNode *UTBAA = M.getNamedMetadata("clang.tbaa.unions");
+	if (UTBAA == nullptr)
+		llvm_unreachable("TBAA: clang.tbaa.unions is null!!!!!!\n");
+	for (size_t i = 0, e = UTBAA->getNumOperands(); i != e; ++i) {
+		MDNode *MD = UTBAA->getOperand(i);
+		MDNode *TBAATag = dyn_cast_or_null<MDNode>(MD->getOperand(1));
+		ValueAsMetadata *ValMD = dyn_cast_or_null<ValueAsMetadata>(MD->getOperand(0));
+		if (TBAATag && ValMD) {
+			UnionsTBAA[cast<StructType>(ValMD->getType())] = TBAATag;
+		}
+	}
+
+	analyzeIndirectCalls(M);
+	collectSensitiveTypes(M);
+	//dumpAllProtectedTypes();
+
+	for (Module::iterator it = M.begin(), ie = M.end(); it != ie; ++it) {
+		Function &f = *it;
+		if (f.isDeclaration() || f.isIntrinsic())
+			continue;
+
+		for (inst_iterator ii = inst_begin(f), ie = inst_end(f);
+				ii != ie; ++ii) {
+			Instruction* inst = &(*ii);
+			
+			if (valueWithSensitiveType(inst) && inst->getNumUses() != 0)
+				addToSensitive(inst);
+
+			StoreInst *sInst = dyn_cast<StoreInst>(inst);
+
+			for (unsigned i = 0, n = inst->getNumOperands(); i < n; ++i) {
+				Value *operand = inst->getOperand(i);
+				if (valueWithSensitiveType(operand)) {
+					addToSensitive(operand);
+					if (sInst) {
+						addToSensitive(sInst);
+					}
+				}
+			}
+
+			// for store instruction, if the pointer value is bitcasted, we check
+			//
+			//    1) the original type is a pointer type (A) of anoter pointer type (B)
+			//	  2) pointer type (B) is sensitive
+			//
+			// we will add the value to store into sensitive set
+			if (StoreInst *SI = dyn_cast<StoreInst>(inst)) {
+				Value * pointer = SI->getPointerOperand();
+				Value * value   = SI->getValueOperand();
+
+				if (BitCastInst * BCI = dyn_cast<BitCastInst>(pointer)) {
+					if (value->getType()->isPointerTy()) {
+						Type * srcType = BCI->getSrcTy();
+						Type * pointedType = cast<PointerType>(srcType)->getElementType();
+
+						if (pointedType->isPointerTy() && isTypeSensitive(pointedType)) {
+							addToSensitive(value);
+							addToSensitive(pointer);
+						}
+					}
+				}
+			/*
+			// as for store instruction
+			} else if (LoadInst * LI = dyn_cast<LoadInst>(inst)) {
+				Value * pointer = LI->getPointerOperand();
+
+				// mark sensitive
+				LLVMContext &ctx = M.getContext();
+				MDNode *node = MDNode::get(ctx, MDString::get(ctx, "yes"));
+
+				if (!pointToI8(pointer->getType()))
+					continue;
+
+				if (BitCastInst * BCI = dyn_cast<BitCastInst>(pointer)) {
+					Type * srcType = BCI->getSrcTy();
+					if (srcType->isPointerTy()) {
+						Type * pointedType = cast<PointerType>(srcType)->getElementType();
+
+						if (pointedType->isPointerTy() && isTypeSensitive(pointedType)) {
+							AllSensitiveValues.insert(LI);
+							AllSensitiveValues.insert(BCI);
+							LI->setMetadata("load-special", node);
+							BCI->setMetadata("load-special", node);
+				
+						}
+					}
+				}
+			*/
+			} else if (ReturnInst *retInst = dyn_cast<ReturnInst>(inst)) {
+				if (retInst->getNumOperands() > 0) {
+					Func2RetValueMap[&f].push_back(retInst->getOperand(0));
+				}
+			}
+		}
+	}
+	
+	// until no values values are inserted into 'AllSensitiveValues'
+	bool changed = true;
+	while (changed) {
+		changed = false;
+		errs() << "got " << AllSensitiveValues.size() << " sensitive values\n";
+		for (Module::iterator it = M.begin(), ie = M.end(); it != ie; ++it) {
+			Function &f = *it;
+			changed |= doTBAAOnFunction(f);
+		}
+	}
+
+	addSensitiveCallIn(M);
+	revokeSensitivity(M);
+
+	// mark all identified instructions as sensitive
+	LLVMContext &ctx = M.getContext();
+	for (Value *sV : AllSensitiveValues) {
+		if (Instruction *inst = dyn_cast<Instruction>(sV)) {
+			MDNode *node = MDNode::get(ctx, MDString::get(ctx, "yes"));
+			inst->setMetadata("is-sensitive", node);
+		}
+	}
+	
+	// set function attribute as "sensitive function"
+	// and disable tail call optimization so as to keep ret instr
+	for (auto F : SensitiveFuncs) {
+		F->addFnAttr("sensitive-func");
+		F->addFnAttr("disable-tail-calls", "true");
+	}
+
+	doInstrumentation(M);
+	doShiftIndirectCall(M);
+	
+	return true;
+}
+
 char CPSensitivePass::ID = 0;
-static RegisterPass<CPSensitivePass> X("CPSensitive", "Code Pointer Sensitive Pass");
+static RegisterPass<CPSensitivePass> X("CPSensitive", "uCFI instrumentation pass");
 
 static void registerMyPass(const PassManagerBuilder &PMB,
 		legacy::PassManagerBase &PM) {
 	PM.add(new CPSensitivePass());
 }
 
-//static RegisterStandardPasses RegisterMyPass(PassManagerBuilder::EP_EarlyAsPossible, registerMyPass);
-//static RegisterStandardPasses RegisterMyPass1(PassManagerBuilder::EP_OptimizerLast, registerMyPass);
 static RegisterStandardPasses RegisterMyPass(PassManagerBuilder::EP_OptimizerLast, registerMyPass);
 static RegisterStandardPasses RegisterMyPass2(PassManagerBuilder::EP_EnabledOnOptLevel0, registerMyPass);

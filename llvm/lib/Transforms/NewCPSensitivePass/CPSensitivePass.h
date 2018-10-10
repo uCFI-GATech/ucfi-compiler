@@ -50,15 +50,6 @@ using namespace std;
 typedef IRBuilder<true, TargetFolder> BuilderTy;
 typedef std::pair<Value *, Instruction *> CEOType;
 
-/**
- * 1. Collect all directly sensitive types (i.e., function pointers,
- * structs/unions contain function pointers).
- * 2. Handle void* (i.e., i8*):
- * 	2.1 BitCast: cast from/to certain sensitive type
- * 	2.2 Store: store sensitive type to void*
- * 	2.3 Load: load sensitive type from void*
- */
-
 namespace {
 	using namespace llvm;
 
@@ -68,8 +59,6 @@ namespace {
 			const DataLayout *DL;
 			TargetLibraryInfo *TLI;
 			AliasAnalysis *AA;
-
-			//static const char* IgnoreFuncs;
 
 			std::unordered_set<Function*> AllFunctions;
 			std::unordered_set<Function *> SensitiveFuncs;
@@ -106,28 +95,22 @@ namespace {
 			bool addToSensitive(Value *V);
 			bool addSecondIfFirstIsSensitive(Value *V1, Value *V2);
 			bool addSecondIfFirstIsSensitive(Value *V1, vector<Value *> &V2);
-
 			bool addValueIfReturnIsSensitive(Value *V, Function *F);
 
 			bool isTypeMatch(ImmutableCallSite CS, Function *F, Type *ReturnType);
 
-			void analyzeIndirectCalls(Module &M);
 
 			// to handle recursive type, record the 'Visited'
 			bool shouldProtectType(Type *Ty, std::unordered_set<Type*> &Visited, MDNode *TBAATag = NULL);
 
+			void analyzeIndirectCalls(Module &M);
 			void collectSensitiveTypes(Module &M);
-
 			void dumpAllProtectedTypes();
-
 			bool handleCallsite(ImmutableCallSite CS, Function *F);
-
 			bool doTBAAOnFunction(llvm::Function &F);
-
 			bool runOnModule(llvm::Module &M) override;
 
 			void getAnalysisUsage(AnalysisUsage &AU) const override {
-				//AU.setPreservesCFG();
 				AU.addRequired<DataLayoutPass>();
 				AU.addRequired<TargetLibraryInfo>();
 				AU.addRequired<AliasAnalysis>();
@@ -166,13 +149,7 @@ namespace {
 			void _hasSensitiveUses(Instruction * I, std::unordered_set<Instruction *> &visited, bool &ret);
 			void _hasSensitiveInstrs(Function * func, std::unordered_set<Function *> &visited, bool &ret);
 
-      void getPTWriteInstrs(BasicBlock *, SmallVector<Value *, 4> &);
-      void getSensitiveCallInstrs(BasicBlock *, SmallVector<Value *, 4> &);
 			unsigned long getIDFromBB(BasicBlock * BB);
 			unsigned long getIDFromPTWriteInstr(Instruction * I);
-      void deduplicatePTWrite(Module &M);
-
-      void doDebloat(Module &M);
-      void doCheckDebloat(Module &M);
 	};
 }
