@@ -1,0 +1,4 @@
+DIR=$(pwd)
+
+export PATH=$DIR/install/bin:$PATH
+export LD_LIBRARY_PATH=$DIR/install/lib/
