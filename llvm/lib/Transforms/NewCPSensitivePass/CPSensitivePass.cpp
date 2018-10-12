@@ -997,7 +997,6 @@ void CPSensitivePass::doInstrumentation(Module &M)
 		for (unsigned index = 0; index < incomingNum; index++) {
 			BasicBlock * incomingBB = PN->getIncomingBlock(index);
 			if (allInstrumentedBBs.find(incomingBB) == allInstrumentedBBs.end()) {
-				instrumentByPHI++;
 				insertPTWriteCallToBB(M, incomingBB);
 			}
 		}
