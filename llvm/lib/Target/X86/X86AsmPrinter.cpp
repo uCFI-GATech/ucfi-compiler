@@ -196,7 +196,7 @@ bool X86AsmPrinter::runOnMachineFunction(MachineFunction &MF) {
 	// uCFI
 	bool ret = false;
 	if (redirectRet)
-		ret |= logReturn(MF);
+		ret |= redirectReturn(MF);
 	if (shadowStack)
 		ret |= parallelShadowStack(MF);
 
