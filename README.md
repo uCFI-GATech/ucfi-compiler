@@ -1,3 +1,5 @@
+This readme is still under construction. You may expect changes in the following days.
+
 # ucfi-compiler
 
 ## Introdocution
@@ -63,6 +65,24 @@ ptwrite emulator helps dump arbitrary value (even non-control-flow data) into In
     `make install`
     
 Now you should have llvm & clang toolchains available in the `install` folder. run `source shrc` in the root directory to add the installation folder into `PATH`
+
+5. build the ptwrite emulator
+
+   `#suppose you are under the root directory of this project`
+   
+   `cd ptwrite-emulator`
+   
+   `# if you want to use parallel shadow stack`
+   
+   `./GenPTWriteFile.py ss`
+   
+   You will get `pt_write_sim_ss.o` here, which is necessary to be linked into the final executable. Check [Compile a hello world to see how to use it](Compile-a-hello-world).
+   
+   `# if you do not want to use parallel shadow stack`
+   
+   `./GenPTWriteFile.py`
+   
+   You will get `pt_write_sim.o` here, which is necessary to be linked into the final executable.
 
 ## Compile a hello world
 
