@@ -24,7 +24,7 @@ The X86 backend achieves two tasks
 
 1. Redirect each RET instruction to an dedicated RET instruction
 
-2. Provide a simple parallel shadow stack implementation proposed in [1] 
+2. Provide a simple parallel shadow stack implementation proposed in [1](README.md#references) 
 
    Note: ucfi just adopts parallel shadow stack to demonstrate the compatibility with shadow stack solutions. We do not claim any contribution or guarantee on protecting the return address. All design novelties go to its orignal authors. This implementation is just a simple version written by ucfi authors. Any implementation bugs go to ucfi authors. Due to implementation difference, overhead of parallel shadow stack could be different from that reported in the original paper.
 
@@ -64,7 +64,7 @@ ptwrite emulator helps dump arbitrary value (even non-control-flow data) into In
     
     `make install`
     
-Now you should have llvm & clang toolchains available in the `install` folder. run `source shrc` in the root directory to add the installation folder into `PATH`
+     Now you should have llvm & clang toolchains available in the `install` folder. run `source shrc` in the root directory to add the installation folder into `PATH`
 
 5. build the ptwrite emulator
 
