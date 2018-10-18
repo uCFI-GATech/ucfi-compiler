@@ -76,7 +76,7 @@ Now you should have llvm & clang toolchains available in the `install` folder. r
    
    `./GenPTWriteFile.py ss`
    
-   You will get `pt_write_sim_ss.o` here, which is necessary to be linked into the final executable. Check [Compile a hello world to see how to use it](Compile-a-hello-world).
+   You will get `pt_write_sim_ss.o` here, which is necessary to be linked into the final executable. Check [Compile a hello world to see how to use it](README.md#compile-a-hello-world).
    
    `# if you do not want to use parallel shadow stack`
    
