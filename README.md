@@ -24,7 +24,7 @@ The X86 backend achieves two tasks
 
 1. Redirect each RET instruction to an dedicated RET instruction
 
-2. Provide a simple parallel shadow stack implementation proposed in [1](README.md#references) 
+2. Provide a simple parallel shadow stack implementation proposed in [1].
 
    Note: ucfi just adopts parallel shadow stack to demonstrate the compatibility with shadow stack solutions. We do not claim any contribution or guarantee on protecting the return address. All design novelties go to its orignal authors. This implementation is just a simple version written by ucfi authors. Any implementation bugs go to ucfi authors. Due to implementation difference, overhead of parallel shadow stack could be different from that reported in the original paper.
 
@@ -85,6 +85,20 @@ ptwrite emulator helps dump arbitrary value (even non-control-flow data) into In
    You will get `pt_write_sim.o` here, which is necessary to be linked into the final executable.
 
 ## Compile a hello world
+
+Currently, ucfi-compiler requires to work on one LLVM IR file of the whole project. In our work, we use [wllvm](https://github.com/travitch/whole-program-llvm) to generate the whole-program-LLVM-IR first, and then we use ucfi-compiler to generate the hardend executable and other auxiliary files.
+
+You can find how to use `wllvm` to generate the whole-program-LLVM-IR following [this link](https://github.com/travitch/whole-program-llvm). Of course, you can use other ways to generate this file, like through [llvm-link](http://llvm.org/docs/CommandGuide/llvm-link.html), or [linking-time-optimization](https://llvm.org/docs/LinkTimeOptimization.html). 
+
+Suppose you have successfully get the one LLVM IR file, here are the instructions to generate the hardened binary. 
+
+1. If you do not want to use shadow stack
+
+    `clang++ -Xclang -load -Xclang ~/pt-cfi/install/lib/LLVMCPSensitivePass.so -Xclang -add-plugin -Xclang -CPSensitive -mllvm -redirectRet /path/to/pt_write_sim.o the-whole-project-ir-file`
+    
+2. Otherwise
+
+    `clang++ -Xclang -load -Xclang ~/pt-cfi/install/lib/LLVMCPSensitivePass.so -Xclang -add-plugin -Xclang -CPSensitive -mllvm -redirectRet /path/to/pt_write_sim_ss.o -mllvm -shadowstack the-whole-project-ir-file`
 
 ## References
 
