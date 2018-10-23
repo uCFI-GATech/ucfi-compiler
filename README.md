@@ -102,26 +102,18 @@ Suppose you have successfully get the one LLVM IR file, here are the instruction
     
 ## Paper Authors
 
-[Hong Hu](https://www.cc.gatech.edu/~hhu86/)
-
-[Chenxiong Qian](https://0-14n.github.io/)
-
-[Carter Yaggemann](https://carteryagemann.com/)
-
-[Simon Pak Ho Chung]
-
-[William R. Harris](https://galois.com/team/bill-harris/)
-
-[Taesoo Kim](https://taesoo.kim/)
-
+[Hong Hu](https://www.cc.gatech.edu/~hhu86/)<br />
+[Chenxiong Qian](https://0-14n.github.io/)<br />
+[Carter Yaggemann](https://carteryagemann.com/)<br />
+Simon Pak Ho Chung<br />
+[William R. Harris](https://galois.com/team/bill-harris/)<br />
+[Taesoo Kim](https://taesoo.kim/)<br />
 [Wenke Lee](http://wenke.gtisc.gatech.edu/)
 
 ## Project Contacts (Gmail)
 
-Hong Hu: huhong789
-
-Chenxiong Qian: chenxiongqian
-
+Hong Hu: huhong789<br />
+Chenxiong Qian: chenxiongqian<br />
 Carter Yagemann: carter.yagemann
 
 ## References
