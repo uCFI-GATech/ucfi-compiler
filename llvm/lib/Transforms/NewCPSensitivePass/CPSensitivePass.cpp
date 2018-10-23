@@ -28,6 +28,21 @@ static const char* PropagateArgFuncs[] = {
 	nullptr,
 };
 
+void saveModule(Module &M, Twine filename)
+{
+	int ll_fd;
+	sys::fs::openFileForWrite(filename + "_pt.ll", ll_fd, 
+			sys::fs::F_RW | sys::fs::F_Text);
+	raw_fd_ostream ll_file(ll_fd, true, true);
+	M.print(ll_file, nullptr);
+
+	int bc_fd;
+	sys::fs::openFileForWrite(filename + "_pt.bc", bc_fd, 
+			sys::fs::F_RW | sys::fs::F_Text);
+	raw_fd_ostream bc_file(bc_fd, true, true);
+	WriteBitcodeToFile(&M, bc_file);
+}
+
 static MDNode *getNextElTBAATag(size_t &STBAAIndex, Type *ElTy, const StructLayout *SL,
 		unsigned idx, MDNode *STBAATag) {
 
@@ -1004,30 +1019,7 @@ void CPSensitivePass::doInstrumentation(Module &M)
 
 	errs() << "END: Applying uCFI for " << M.getModuleIdentifier() << '\n';
 
-	//saveModule(M, M.getName());
-}
-
-unsigned long CPSensitivePass::getIDFromPTWriteInstr(Instruction * I) {
-  CallInst * CI = dyn_cast<CallInst>(I);
-  if (!CI)
-    return 0;
-  Function * func = CI->getCalledFunction();
-  if (!func || func->getName() != "ptwrite")
-    return 0;
-  Value * arg = CI->getArgOperand(0);
-  if (ConstantExpr * CE = dyn_cast<ConstantExpr>(arg)) {
-    if (CE->getOpcode() == Instruction::Add) {
-      Value * addend = CE->getOperand(1);
-      ConstantInt * Addend = cast<ConstantInt>(addend);
-      return Addend->getZExtValue();
-    } else if (CE->getOpcode() == Instruction::PtrToInt)
-      return 0;
-  } else 
-    return 0;
-}
-
-unsigned long CPSensitivePass::getIDFromBB(BasicBlock * BB) {
-  return getIDFromPTWriteInstr(BB->getFirstNonPHI());
+	saveModule(M, M.getName());
 }
 
 // this function is to shift all indirect function call into 

@@ -148,8 +148,5 @@ namespace {
 			bool pointToI8(Type * type);
 			void _hasSensitiveUses(Instruction * I, std::unordered_set<Instruction *> &visited, bool &ret);
 			void _hasSensitiveInstrs(Function * func, std::unordered_set<Function *> &visited, bool &ret);
-
-			unsigned long getIDFromBB(BasicBlock * BB);
-			unsigned long getIDFromPTWriteInstr(Instruction * I);
 	};
 }
