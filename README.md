@@ -2,7 +2,7 @@ This readme is still under construction. You may expect changes in the following
 
 # ucfi-compiler
 
-## Introdocution
+## Introduction
 
 ucfi-compiler compiles project source code into a hardened version, so that ucfi-monitor can protect its execution from control-flow hijacking attacks. It contains three components: LLVM pass, X86 backend and ptwrite emulator.
 
@@ -99,6 +99,22 @@ Suppose you have successfully get the one LLVM IR file, here are the instruction
 2. Otherwise
 
     `clang++ -Xclang -load -Xclang ~/pt-cfi/install/lib/LLVMCPSensitivePass.so -Xclang -add-plugin -Xclang -CPSensitive -mllvm -redirectRet /path/to/pt_write_sim_ss.o -mllvm -shadowstack the-whole-project-ir-file`
+    
+## Paper Authors
+
+[Hong Hu](https://www.cc.gatech.edu/~hhu86/)
+[Chenxiong Qian](https://0-14n.github.io/)
+[Carter Yaggemann](https://carteryagemann.com/)
+[Simon Pak Ho Chung]
+[William R. Harris]
+[Taesoo Kim](https://taesoo.kim/)
+[Wenke Lee](http://wenke.gtisc.gatech.edu/)
+
+## Project Contacts (Gmail)
+
+Hong Hu: huhong789
+Chenxiong Qian: chenxiongqian
+Carter Yagemann: carter.yagemann
 
 ## References
 
