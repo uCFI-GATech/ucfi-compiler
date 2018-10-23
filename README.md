@@ -92,13 +92,20 @@ You can find how to use `wllvm` to generate the whole-program-LLVM-IR following 
 
 Suppose you have successfully get the one LLVM IR file, here are the instructions to generate the hardened binary. 
 
-1. If you do not want to use shadow stack
+0. Lower any indirect jump to if-else branch. Currently uCFI only handles indirect function calls. For indirect jump, we rely on the lowerswitch pass of opt to change them to if-else + direct jump. 
 
-    `clang++ -Xclang -load -Xclang ~/pt-cfi/install/lib/LLVMCPSensitivePass.so -Xclang -add-plugin -Xclang -CPSensitive -mllvm -redirectRet /path/to/pt_write_sim.o the-whole-project-ir-file`
+    `opt -lowerswitch the-whole-project-ir-file -o the-whole-project-ir-file-A`
+    `cp the-whole-project-ir-file-A the-whole-project-ir-file`
+
+1.1 If you do not want to use shadow stack
+
+    `clang++ -Xclang -load -Xclang ~/pt-cfi/install/lib/LLVMCPSensitivePass.so -Xclang -add-plugin -Xclang -CPSensitive -mllvm -redirectRet /path/to/pt_write_sim.o the-whole-project-ir-file -o hardened-bin`
     
-2. Otherwise
+1.2 If you want to use shadow stack
 
-    `clang++ -Xclang -load -Xclang ~/pt-cfi/install/lib/LLVMCPSensitivePass.so -Xclang -add-plugin -Xclang -CPSensitive -mllvm -redirectRet /path/to/pt_write_sim_ss.o -mllvm -shadowstack the-whole-project-ir-file`
+    `clang++ -Xclang -load -Xclang ~/pt-cfi/install/lib/LLVMCPSensitivePass.so -Xclang -add-plugin -Xclang -CPSensitive -mllvm -redirectRet /path/to/pt_write_sim_ss.o -mllvm -shadowstack the-whole-project-ir-file -o hardened-bin`
+    
+At this stage, you should get the hardened binary, and the IR file named like `*_pt.bc`. You need both to run the monitor. See the `ucfi kernel` repo for an example running script.
     
 ## Paper Authors
 
