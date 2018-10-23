@@ -686,21 +686,6 @@ bool CPSensitivePass::insertPTWriteCallToBB(Module &M, BasicBlock * BB)
 	return true;
 }
 
-void saveModule(Module &M, Twine filename)
-{
-	int ll_fd;
-	sys::fs::openFileForWrite(filename + "_pt.ll", ll_fd, 
-			sys::fs::F_RW | sys::fs::F_Text);
-	raw_fd_ostream ll_file(ll_fd, true, true);
-	M.print(ll_file, nullptr);
-
-	int bc_fd;
-	sys::fs::openFileForWrite(filename + "_pt.bc", bc_fd, 
-			sys::fs::F_RW | sys::fs::F_Text);
-	raw_fd_ostream bc_file(bc_fd, true, true);
-	WriteBitcodeToFile(&M, bc_file);
-}
-
 void CPSensitivePass::replaceCEOWithInstr(Instruction * I, Value * pointer)
 {
 	if (ConstantExpr * CE = dyn_cast<ConstantExpr>(pointer))
