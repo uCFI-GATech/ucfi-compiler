@@ -1,6 +1,6 @@
-This readme is still under construction. You may expect changes in the following days.
-
 # ucfi-compiler
+
+To use uCFI you also need [ucfi-kernel](https://github.com/uCFI-GATech/ucfi-kernel) and [ucfi-monitor](https://github.com/uCFI-GATech/ucfi-monitor).
 
 ## Introduction
 
@@ -8,7 +8,7 @@ ucfi-compiler compiles project source code into a hardened version, so that ucfi
 
 #### LLVM pass
 
-The related code of LLVM pass is in `llvm/lib/Transforms/NewCPSensitivePass`. The LLVM pass will complete the follows tasks:
+The related code is in `llvm/lib/Transforms/NewCPSensitivePass`. The LLVM pass will complete the follows tasks:
 
 1. Identify and instrument constraining data so that the monitor knows its value
 
@@ -20,7 +20,7 @@ The related code of LLVM pass is in `llvm/lib/Transforms/NewCPSensitivePass`. Th
 
 #### X86 backend
 
-The X86 backend achieves two tasks
+The related code is in `llvm/lib/Target/X86/X86AsmPrinter.cpp`. The X86 backend achieves two tasks
 
 1. Redirect each RET instruction to an dedicated RET instruction
 
@@ -30,7 +30,7 @@ The X86 backend achieves two tasks
 
 #### ptwrite emulator
 
-ptwrite emulator helps dump arbitrary value (even non-control-flow data) into Intel PT trace. It mainly supports two features
+The related code is in `ptwrite-emulator`. ptwrite emulator helps dump arbitrary value (even non-control-flow data) into Intel PT trace. It mainly supports two features
 
 1. A dedicated RET instrution to help achieve return for all functions
 
@@ -97,17 +97,32 @@ Suppose you have successfully get the one LLVM IR file, here are the instruction
     `opt -lowerswitch the-whole-project-ir-file -o the-whole-project-ir-file-A`
     `cp the-whole-project-ir-file-A the-whole-project-ir-file`
 
-1.1 If you do not want to use shadow stack
+1. If you do not want to use shadow stack
 
     `clang++ -Xclang -load -Xclang ~/pt-cfi/install/lib/LLVMCPSensitivePass.so -Xclang -add-plugin -Xclang -CPSensitive -mllvm -redirectRet /path/to/pt_write_sim.o the-whole-project-ir-file -o hardened-bin`
     
-1.2 If you want to use shadow stack
+2. If you want to use shadow stack
 
     `clang++ -Xclang -load -Xclang ~/pt-cfi/install/lib/LLVMCPSensitivePass.so -Xclang -add-plugin -Xclang -CPSensitive -mllvm -redirectRet /path/to/pt_write_sim_ss.o -mllvm -shadowstack the-whole-project-ir-file -o hardened-bin`
     
 At this stage, you should get the hardened binary, and the IR file named like `*_pt.bc`. You need both to run the monitor. See the `ucfi kernel` repo for an example running script.
     
-## Paper Authors
+## Paper
+
+Hong Hu, Chenxiong Qian, Carter Yagemann, Simon Pak Ho Chung, William R. Harris, Taesoo Kim, and Wenke Lee. 2018. Enforcing Unique Code Target Property for Control-Flow Integrity. In Proceedings of the 2018 ACM SIGSAC Conference on Computer and Communications Security (CCS '18). ACM, New York, NY, USA, 1470-1486. DOI: https://doi.org/10.1145/3243734.3243797
+
+```
+@inproceedings{hu:ucfi,
+  title        = {{Enforcing Unique Code Target Property for Control-Flow Integrity}},
+  author       = {Hong Hu and Chenxiong Qian and Carter Yagemann and Simon Pak Ho Chung and William R. Harris and Taesoo Kim and Wenke Lee},
+  booktitle    = {Proceedings of the 25th ACM Conference on Computer and Communications Security (CCS)},
+  month        = oct,
+  year         = 2018,
+  address      = {Toronto, ON, Canada},
+}
+```
+
+## Authors
 
 [Hong Hu](https://www.cc.gatech.edu/~hhu86/)<br />
 [Chenxiong Qian](https://0-14n.github.io/)<br />
@@ -117,7 +132,7 @@ Simon Pak Ho Chung<br />
 [Taesoo Kim](https://taesoo.kim/)<br />
 [Wenke Lee](http://wenke.gtisc.gatech.edu/)
 
-## Project Contacts (Gmail)
+## Contacts (Gmail)
 
 Hong Hu: huhong789<br />
 Chenxiong Qian: chenxiongqian<br />
