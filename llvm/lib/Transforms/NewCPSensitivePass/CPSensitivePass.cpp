@@ -1467,8 +1467,10 @@ bool CPSensitivePass::runOnModule(llvm::Module &M) {
 
 	// get all tbaa nodes
 	NamedMDNode *STBAA = M.getNamedMetadata("clang.tbaa.structs");
-	if (STBAA == nullptr)
-		llvm_unreachable("TBAA: clang.tbaa.structs is null!!!!!!\n");
+	if (!STBAA) {
+		printf("TBAA: clang.tbaa.structs is null! Skip the ucfi pass\n");
+		return false;
+	}
 	for (size_t i = 0, e = STBAA->getNumOperands(); i != e; ++i) {
 		MDNode *MD = STBAA->getOperand(i);
 		MDNode *TBAATag = dyn_cast_or_null<MDNode>(MD->getOperand(1));
@@ -1479,8 +1481,10 @@ bool CPSensitivePass::runOnModule(llvm::Module &M) {
 	}
 
 	NamedMDNode *UTBAA = M.getNamedMetadata("clang.tbaa.unions");
-	if (UTBAA == nullptr)
-		llvm_unreachable("TBAA: clang.tbaa.unions is null!!!!!!\n");
+	if (!UTBAA) {
+		printf("TBAA: clang.tbaa.unions is null! Skip the ucfi pass\n");
+		return false;
+	}
 	for (size_t i = 0, e = UTBAA->getNumOperands(); i != e; ++i) {
 		MDNode *MD = UTBAA->getOperand(i);
 		MDNode *TBAATag = dyn_cast_or_null<MDNode>(MD->getOperand(1));
