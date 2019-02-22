@@ -50,7 +50,7 @@ The related code is in `ptwrite-emulator`. ptwrite emulator helps dump arbitrary
     
 2. create build and install folder
 
-    `make {build,install}`
+    `mkdir {build,install}`
     
     `cd build`
     
@@ -95,6 +95,7 @@ Suppose you have successfully get the one LLVM IR file, here are the instruction
 0. Lower any indirect jump to if-else branch. Currently uCFI only handles indirect function calls. For indirect jump, we rely on the lowerswitch pass of opt to change them to if-else + direct jump. 
 
     `opt -lowerswitch the-whole-project-ir-file -o the-whole-project-ir-file-A`
+    
     `cp the-whole-project-ir-file-A the-whole-project-ir-file`
 
 1. If you do not want to use shadow stack
