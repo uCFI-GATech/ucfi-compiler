@@ -158,11 +158,16 @@ static void fixPhis(BasicBlock *SuccBB, BasicBlock *OrigBB, BasicBlock *NewBB,
 
     // Remove additional occurences coming from condensed cases and keep the
     // number of incoming values equal to the number of branches to SuccBB.
+    SmallVector<unsigned, 8> Indices;
     for (++Idx; LocalNumMergedCases > 0 && Idx < E; ++Idx)
       if (PN->getIncomingBlock(Idx) == OrigBB) {
-        PN->removeIncomingValue(Idx);
+        Indices.push_back(Idx);
         LocalNumMergedCases--;
       }
+
+    SmallVector<unsigned, 8>::reverse_iterator IHH = Indices.rbegin(), IHHE = Indices.rend();
+    for (; IHH != IHHE; IHH++)
+      PN->removeIncomingValue(*IHH);
   }
 }
 
