@@ -1443,6 +1443,12 @@ void CodeGenModule::ConstructAttributeList(const CGFunctionInfo &FI,
       FuncAttrs.addAttribute("no-frame-pointer-elim-non-leaf");
     }
 
+    bool DisableTailCalls = CodeGenOpts.DisableTailCalls || 
+      (TargetDecl && TargetDecl->hasAttr<DisableTailCallsAttr>());
+    
+    FuncAttrs.addAttribute("disable-tail-calls", 
+        llvm::toStringRef(DisableTailCalls));
+
     FuncAttrs.addAttribute("less-precise-fpmad",
                            llvm::toStringRef(CodeGenOpts.LessPreciseFPMAD));
     FuncAttrs.addAttribute("no-infs-fp-math",

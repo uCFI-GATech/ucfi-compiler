@@ -1411,3 +1411,41 @@ private address space. Kernel function arguments of a pointer or an array type
 cannot point to the private address space.
   }];
 }
+
+def DisableTailCallsDocs : Documentation {
+  let Category = DocCatFunction;
+  let Content = [{
+The ``disable_tail_calls`` attribute instructs the backend to not perform tail call optimization inside the marked function.
+
+For example:
+
+  .. code-block:: c
+
+    int callee(int);
+
+    int foo(int a) __attribute__((disable_tail_calls)) {
+      return callee(a); // This call is not tail-call optimized.
+    }
+
+Marking virtual functions as ``disable_tail_calls`` is legal.
+
+  .. code-block: c++
+
+    int callee(int);
+
+    class Base {
+    public:
+      [[clang::disable_tail_calls]] virtual int foo1() {
+        return callee(); // This call is not tail-call optimized.
+      }
+    };
+
+    class Derived1 : public Base {
+    public:
+      int foo1() override {
+        return callee(); // This call is tail-call optimized.
+      }
+    };
+
+  }];
+}

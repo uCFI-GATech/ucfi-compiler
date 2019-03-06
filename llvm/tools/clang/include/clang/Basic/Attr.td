@@ -1975,3 +1975,10 @@ def OMPThreadPrivateDecl : InheritableAttr {
   let SemaHandler = 0;
   let Documentation = [Undocumented];
 }
+
+def DisableTailCalls : InheritableAttr {
+  let Spellings = [GNU<"disable_tail_calls">,
+                   CXX11<"clang", "disable_tail_calls">];
+  let Subjects = SubjectList<[Function, ObjCMethod]>;
+  let Documentation = [DisableTailCallsDocs];
+}
