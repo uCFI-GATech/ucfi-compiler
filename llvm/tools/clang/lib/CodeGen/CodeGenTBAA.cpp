@@ -33,7 +33,7 @@ CodeGenTBAA::CodeGenTBAA(ASTContext &Ctx, llvm::LLVMContext& VMContext,
                          const CodeGenOptions &CGO,
                          const LangOptions &Features, MangleContext &MContext)
   : Context(Ctx), CodeGenOpts(CGO), Features(Features), MContext(MContext),
-    MDHelper(VMContext), Root(nullptr), Char(nullptr) {
+    MDHelper(VMContext), Root(nullptr), Char(nullptr), VoidPtr(nullptr), FuncPtr(nullptr) {
 }
 
 CodeGenTBAA::~CodeGenTBAA() {
@@ -68,6 +68,20 @@ llvm::MDNode *CodeGenTBAA::getChar() {
   return Char;
 }
 
+llvm::MDNode *CodeGenTBAA::getVoidPtr() {
+  if (!VoidPtr)
+    VoidPtr = createTBAAScalarType("void pointer", getChar());
+
+  return VoidPtr;
+}
+
+llvm::MDNode *CodeGenTBAA::getFuncPtr() {
+  if (!FuncPtr)
+    FuncPtr = createTBAAScalarType("function pointer", getVoidPtr());
+
+  return FuncPtr;
+}
+
 static bool TypeHasMayAlias(QualType QTy) {
   // Tagged types have declarations, and therefore may have attributes.
   if (const TagType *TTy = dyn_cast<TagType>(QTy))
@@ -87,7 +101,8 @@ static bool TypeHasMayAlias(QualType QTy) {
 llvm::MDNode *
 CodeGenTBAA::getTBAAInfo(QualType QTy) {
   // At -O0 or relaxed aliasing, TBAA is not emitted for regular types.
-  if (CodeGenOpts.OptimizationLevel == 0 || CodeGenOpts.RelaxedAliasing)
+  if (//CodeGenOpts.OptimizationLevel == 0 || 
+      CodeGenOpts.RelaxedAliasing)
     return nullptr;
 
   // If the type has the may_alias attribute (even on a typedef), it is
@@ -138,9 +153,15 @@ CodeGenTBAA::getTBAAInfo(QualType QTy) {
   // Handle pointers.
   // TODO: Implement C++'s type "similarity" and consider dis-"similar"
   // pointers distinct.
-  if (Ty->isPointerType())
-    return MetadataCache[Ty] = createTBAAScalarType("any pointer",
-                                                    getChar());
+  if (Ty->isPointerType()) {
+    if (Ty->isVoidPointerType()) {
+      return MetadataCache[Ty] = getVoidPtr();
+    } else if (Ty->isFunctionPointerType()) {
+      return MetadataCache[Ty] = getFuncPtr();
+    }
+    return MetadataCache[Ty] = createTBAAScalarType("any non-void pointer",
+        getChar());
+  }
 
   // Enum types are distinct types. In C++ they have "underlying types",
   // however they aren't related for TBAA.
@@ -150,6 +171,14 @@ CodeGenTBAA::getTBAAInfo(QualType QTy) {
     // TODO: Is there a way to get a program-wide unique name for a
     // decl with local linkage or no linkage?
     if (!Features.CPlusPlus || !ETy->getDecl()->isExternallyVisible())
+      return MetadataCache[Ty] = getChar();
+
+    // In C mode, two anonymous enums are compatible iff their members
+    // are the same -- see C99 6.2.7p1. For now, be conservative. We could
+    // theoretically implement this by combining information about all the
+    // members into a single identifying MDNode.
+    if (!Features.CPlusPlus &&
+        ETy->getDecl()->getTypedefNameForAnonDecl())
       return MetadataCache[Ty] = getChar();
 
     SmallString<256> OutName;

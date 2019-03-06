@@ -71,6 +71,9 @@ class CodeGenTBAA {
   llvm::MDNode *Root;
   llvm::MDNode *Char;
 
+  llvm::MDNode *VoidPtr;
+  llvm::MDNode *FuncPtr;
+
   /// getRoot - This is the mdnode for the root of the metadata type graph
   /// for this translation unit.
   llvm::MDNode *getRoot();
@@ -78,6 +81,13 @@ class CodeGenTBAA {
   /// getChar - This is the mdnode for "char", which is special, and any types
   /// considered to be equivalent to it.
   llvm::MDNode *getChar();
+
+  /// getVoidPtr - This is the mdnode for "void*", which is a parent for all
+  /// other pointer types. Having void* as a distinct node is useful for
+  /// certain analysis (e.g., to differentiate void* from char* pointers).
+  llvm::MDNode *getVoidPtr();
+
+  llvm::MDNode *getFuncPtr();
 
   /// CollectFields - Collect information about the fields of a type for
   /// !tbaa.struct metadata formation. Return false for an unsupported type.

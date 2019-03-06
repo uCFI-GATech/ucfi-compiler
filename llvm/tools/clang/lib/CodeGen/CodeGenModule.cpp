@@ -52,6 +52,7 @@
 #include "llvm/ProfileData/InstrProfReader.h"
 #include "llvm/Support/ConvertUTF.h"
 #include "llvm/Support/ErrorHandling.h"
+#include "llvm/Support/raw_ostream.h"
 
 using namespace clang;
 using namespace CodeGen;
@@ -122,7 +123,7 @@ CodeGenModule::CodeGenModule(ASTContext &C, const CodeGenOptions &CGO,
 
   // Enable TBAA unless it's suppressed. ThreadSanitizer needs TBAA even at O0.
   if (LangOpts.Sanitize.has(SanitizerKind::Thread) ||
-      (!CodeGenOpts.RelaxedAliasing && CodeGenOpts.OptimizationLevel > 0))
+      (!CodeGenOpts.RelaxedAliasing && CodeGenOpts.OptimizationLevel >= 0))
     TBAA = new CodeGenTBAA(Context, VMContext, CodeGenOpts, getLangOpts(),
                            getCXXABI().getMangleContext());
 
@@ -408,6 +409,8 @@ void CodeGenModule::Release() {
 
   if (getCodeGenOpts().EmitGcovArcs || getCodeGenOpts().EmitGcovNotes)
     EmitCoverageFile();
+
+  EmitStructsTBAAMetadata();
 
   if (DebugInfo)
     DebugInfo->finalize();
@@ -1190,6 +1193,56 @@ void CodeGenModule::AddGlobalAnnotations(const ValueDecl *D,
   // Get the struct elements for these annotations.
   for (const auto *I : D->specific_attrs<AnnotateAttr>())
     Annotations.push_back(EmitAnnotateAttr(GV, I, D->getLocation()));
+}
+
+void CodeGenModule::EmitStructsTBAAMetadata() {
+  if (!TBAA) {
+    //@CHENXIONG
+    return;
+  }
+
+  llvm::NamedMDNode *StructTBAA =
+      getModule().getOrInsertNamedMetadata("clang.tbaa.structs");
+
+  llvm::NamedMDNode *UnionTBAA =
+      getModule().getOrInsertNamedMetadata("clang.tbaa.unions");
+
+  // FIXME: we should only get the types that actually appear in the AST
+  typedef llvm::DenseMap<const Type*, llvm::StructType*> RecordLayoutsTy;
+  const RecordLayoutsTy &RL = getTypes().getCompletedRecordLayouts();
+
+  for (RecordLayoutsTy::const_iterator It = RL.begin(),
+                                       Ie = RL.end(); It != Ie; ++It) {
+    const Type *Ty = It->first;
+    assert(Ty->isRecordType());
+    if (!Ty->isRecordType() ||
+        !Ty->isCanonicalUnqualified() ||
+        Ty->isIncompleteType())
+      continue;
+
+    {
+      llvm::MDNode *TyTBAA = TBAA->getTBAAStructInfo(QualType(Ty, 0));
+      llvm::Metadata *Ops[2] = { llvm::ValueAsMetadata::get(llvm::UndefValue::get(It->second)), TyTBAA };
+      StructTBAA->addOperand(llvm::MDNode::get(getModule().getContext(), Ops));
+    }
+
+    if (Ty->isUnionType()) {
+      llvm::SmallVector<llvm::Metadata*, 4> ElOps;
+      const RecordType *TTy = Ty->getAs<RecordType>();
+      const RecordDecl *RD = TTy->getDecl()->getDefinition();
+
+      for (RecordDecl::field_iterator i = RD->field_begin(),
+           e = RD->field_end(); i != e; ++i) {
+        llvm::Type *ElTy = getTypes().ConvertType(i->getType());
+        ElOps.push_back(llvm::ValueAsMetadata::get(llvm::UndefValue::get(ElTy)));
+        ElOps.push_back(getTBAAInfo(i->getType()));
+      }
+
+      llvm::MDNode *TyTBAA = llvm::MDNode::get(getModule().getContext(), ElOps);
+      llvm::Metadata *Ops[2] = { llvm::ValueAsMetadata::get(llvm::UndefValue::get(It->second)), TyTBAA };
+      UnionTBAA->addOperand(llvm::MDNode::get(getModule().getContext(), Ops));
+    }
+  }
 }
 
 bool CodeGenModule::isInSanitizerBlacklist(llvm::Function *Fn,
