@@ -1469,7 +1469,7 @@ bool CPSensitivePass::runOnModule(llvm::Module &M) {
 	NamedMDNode *STBAA = M.getNamedMetadata("clang.tbaa.structs");
 	if (!STBAA) {
 		printf("TBAA: clang.tbaa.structs is null! Skip the ucfi pass\n");
-		return false;
+		//return false;
 	}
 	for (size_t i = 0, e = STBAA->getNumOperands(); i != e; ++i) {
 		MDNode *MD = STBAA->getOperand(i);
@@ -1483,7 +1483,7 @@ bool CPSensitivePass::runOnModule(llvm::Module &M) {
 	NamedMDNode *UTBAA = M.getNamedMetadata("clang.tbaa.unions");
 	if (!UTBAA) {
 		printf("TBAA: clang.tbaa.unions is null! Skip the ucfi pass\n");
-		return false;
+		//return false;
 	}
 	for (size_t i = 0, e = UTBAA->getNumOperands(); i != e; ++i) {
 		MDNode *MD = UTBAA->getOperand(i);
