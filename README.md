@@ -84,11 +84,13 @@ Suppose you have successfully get the one LLVM IR file, like `hello.bc` , here a
        opt -lowerswitch hello.bc -o hello.bc-A
        cp hello.bc-A hello.bc
 
-2. If you do not want to use shadow stack
+2. Apply pass, link with ptwrite emulator and generate the hardened binary 
+
+    If you do not want to use shadow stack
 
        clang++ -Xclang -load -Xclang $COMPILER_PATH/install/lib/LLVMCPSensitivePass.so -Xclang -add-plugin -Xclang -CPSensitive -mllvm -redirectRet $COMPILER_PATH/ptwrite-emulator/pt_write_sim.o hello.bc -o hardened-bin
     
-3. If you want to use shadow stack
+    If you want to use shadow stack
 
        clang++ -Xclang -load -Xclang $COMPILER_PATH/install/lib/LLVMCPSensitivePass.so -Xclang -add-plugin -Xclang -CPSensitive -mllvm -redirectRet $COMPILER_PATH/ptwrite-emulator/pt_write_sim_ss.o -mllvm -shadowstack hello.bc -o hardened-bin`
        
